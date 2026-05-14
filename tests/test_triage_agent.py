@@ -67,6 +67,7 @@ class TestBuildPrompt(unittest.TestCase):
             category="playwright-e2e",
             gist_raw_url="https://gist.example",
             actions_run_url="https://actions.example",
+            log="sample log content",
         )
         self.assertIn("selector mismatches", prompt)
         self.assertIn("my-job", prompt)
@@ -80,9 +81,22 @@ class TestBuildPrompt(unittest.TestCase):
             category="eks-deploy",
             gist_raw_url="https://gist.example",
             actions_run_url="https://actions.example",
+            log="sample log content",
         )
         self.assertIn("CrashLoopBackOff", prompt)
         self.assertNotIn("selector mismatches", prompt)
+
+    def test_log_content_included_in_prompt(self):
+        prompt = triage_agent.build_prompt(
+            job="j",
+            branch="b",
+            commit="c",
+            category="playwright-e2e",
+            gist_raw_url="https://g",
+            actions_run_url="https://a",
+            log="Error: selector .submit-btn not found",
+        )
+        self.assertIn("Error: selector .submit-btn not found", prompt)
 
     def test_unknown_category_still_returns_prompt(self):
         prompt = triage_agent.build_prompt(
@@ -92,6 +106,7 @@ class TestBuildPrompt(unittest.TestCase):
             category="some-new-category",
             gist_raw_url="https://g",
             actions_run_url="https://a",
+            log="sample log content",
         )
         self.assertIn("some-new-category", prompt)
 

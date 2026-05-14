@@ -24,7 +24,7 @@ def section(title: str):
 
 
 def fetch_log(raw_url: str) -> str:
-    with urllib.request.urlopen(raw_url) as resp:
+    with urllib.request.urlopen(raw_url, timeout=30) as resp:
         return resp.read().decode("utf-8")
 
 
@@ -140,7 +140,7 @@ _PROMPT_TEMPLATE = pathlib.Path(__file__).parent.joinpath("prompts", "agent_prom
 
 
 def build_prompt(*, job: str, branch: str, commit: str, category: str,
-                 gist_raw_url: str, actions_run_url: str) -> str:
+                 gist_raw_url: str, actions_run_url: str, log: str) -> str:
     instructions = CATEGORY_INSTRUCTIONS.get(
         category,
         f"Analyze the log for category '{category}' and provide root cause, fix, and confidence.",
@@ -154,6 +154,7 @@ def build_prompt(*, job: str, branch: str, commit: str, category: str,
         .replace("{{gist_raw_url}}", gist_raw_url)
         .replace("{{actions_run_url}}", actions_run_url)
         .replace("{{category_instructions}}", instructions)
+        .replace("{{log}}", log)
     )
 
 
@@ -202,6 +203,7 @@ def main():
         category=category,
         gist_raw_url=gist_raw_url,
         actions_run_url=actions_run_url,
+        log=log,
     )
 
     rca = run_agent_loop(client, [{"role": "user", "content": prompt}], gh_token)

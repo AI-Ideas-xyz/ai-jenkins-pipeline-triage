@@ -19,12 +19,14 @@ def _github_api(method: str, path: str, token: str, body=None):
         method=method,
     )
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         raise RuntimeError(
             f"GitHub API {method} {path} failed: {e.code} {e.read().decode()}"
         ) from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"GitHub API {method} {path} unreachable: {e.reason}") from e
 
 
 def check_duplicate_issue(signature: str, token: str) -> dict:
