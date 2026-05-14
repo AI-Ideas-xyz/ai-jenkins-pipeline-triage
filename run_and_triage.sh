@@ -106,9 +106,10 @@ RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
   -H "Accept: application/vnd.github.v3+json" \
   "https://api.github.com/repos/${GITHUB_REPO}/dispatches" \
   -d "{
-    \"event_type\": \"local-test-failure\",
+    \"event_type\": \"pipeline-failure\",
     \"client_payload\": {
       \"job\": \"local-playwright-e2e\",
+      \"category\": \"playwright-e2e\",
       \"branch\": \"$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)\",
       \"commit\": \"$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)\",
       \"gist_raw_url\": \"$GIST_RAW_URL\"
