@@ -3,9 +3,15 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
+# Stub agent_tools only for the import of triage_agent, then restore sys.modules
+# so that test_agent_tools.py always gets the real module regardless of run order.
+_saved_agent_tools = sys.modules.get("agent_tools")
 sys.modules["agent_tools"] = MagicMock()
-
 import triage_agent
+if _saved_agent_tools is not None:
+    sys.modules["agent_tools"] = _saved_agent_tools
+else:
+    sys.modules.pop("agent_tools", None)
 
 
 class TestRunAgentLoop(unittest.TestCase):
