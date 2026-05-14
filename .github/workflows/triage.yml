@@ -57,6 +57,18 @@ jobs:
               print(f"--- FULL LOG ({len(lines)} lines) ---")
               print(log)
               print("=" * 60)
+
+              # Delete Gist immediately after reading
+              del_req = urllib.request.Request(
+                  f"https://api.github.com/gists/{gist_id}",
+                  headers={
+                      "Authorization": f"token {token}",
+                      "Accept": "application/vnd.github.v3+json"
+                  },
+                  method="DELETE"
+              )
+              urllib.request.urlopen(del_req)
+              print(f"Gist {gist_id} deleted after reading.")
           EOF
 
       # ── STEP 2: Run triage agent (uncomment when ready) ───────────────────

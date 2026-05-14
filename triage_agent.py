@@ -14,16 +14,26 @@ client = OpenAI(
 )
 
 def fetch_log_from_gist(gist_id: str, token: str) -> str:
-    req = urllib.request.Request(
-        f"https://api.github.com/gists/{gist_id}",
-        headers={
-            "Authorization": f"token {token}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-    )
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    # Fetch
+    req = urllib.request.Request(f"https://api.github.com/gists/{gist_id}", headers=headers)
     with urllib.request.urlopen(req) as resp:
         data = json.loads(resp.read())
-    return list(data["files"].values())[0]["content"]
+    content = list(data["files"].values())[0]["content"]
+
+    # Delete immediately after reading — no Gist accumulation
+    del_req = urllib.request.Request(
+        f"https://api.github.com/gists/{gist_id}",
+        headers=headers,
+        method="DELETE"
+    )
+    urllib.request.urlopen(del_req)
+    print(f"Gist {gist_id} deleted after reading.")
+
+    return content
 
 def main():
     payload  = json.loads(os.environ["EVENT_PAYLOAD"])
