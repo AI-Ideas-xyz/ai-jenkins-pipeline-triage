@@ -3,6 +3,17 @@ name: Pipeline Triage Agent
 on:
   repository_dispatch:
     types: [pipeline-failure]
+  workflow_dispatch:
+    inputs:
+      gist_raw_url:
+        description: "Raw Gist URL of the failure log"
+        required: true
+      category:
+        description: "Failure category (playwright-e2e or eks-deploy)"
+        default: "eks-deploy"
+      job:
+        description: "Job name"
+        default: "manual-trigger"
 
 permissions:
   contents: read
@@ -31,6 +42,16 @@ jobs:
           GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           TEAMS_WEBHOOK:     ${{ secrets.TEAMS_WEBHOOK }}
-          EVENT_PAYLOAD:     ${{ toJson(github.event.client_payload) }}
           ACTIONS_RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT_PAYLOAD: >-
+            ${{
+              github.event_name == 'workflow_dispatch'
+              && format('{{"gist_raw_url":"{0}","category":"{1}","job":"{2}","branch":"{3}","commit":"{4}"}}',
+                  github.event.inputs.gist_raw_url,
+                  github.event.inputs.category,
+                  github.event.inputs.job,
+                  github.ref_name,
+                  github.sha)
+              || toJson(github.event.client_payload)
+            }}
         run: python triage_agent.py
