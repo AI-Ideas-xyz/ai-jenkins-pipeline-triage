@@ -1,13 +1,14 @@
 #!/bin/bash
-# Runs Playwright tests locally. On failure, ships logs to GitHub Actions via repository_dispatch.
-# Usage: ./run_and_triage.sh
+# Runs Playwright tests locally. On failure:
+#   1. Uploads full log to a secret GitHub Gist (no size limit)
+#   2. Sends Gist ID to GitHub Actions via repository_dispatch
 
-# Resolve absolute path of the project root (where this script lives)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_DIR="$SCRIPT_DIR/test-results"
+# triage-logs/, NOT test-results/ — Playwright wipes test-results/ on every run
+LOG_DIR="$SCRIPT_DIR/triage-logs"
 LOG_FILE="$LOG_DIR/run.log"
 
-# ── Load .env if present ──────────────────────────────────────────────────────
+# ── Load .env ─────────────────────────────────────────────────────────────────
 if [ -f "$SCRIPT_DIR/.env" ]; then
   export $(grep -v '^#' "$SCRIPT_DIR/.env" | xargs)
 fi
@@ -16,18 +17,18 @@ fi
 : "${GITHUB_REPO:?GITHUB_REPO is not set. Example: owner/repo}"
 
 mkdir -p "$LOG_DIR"
-> "$LOG_FILE"   # create/clear the log file upfront
+> "$LOG_FILE"
 
 echo ""
 echo "[1/4] Running Playwright tests..."
 echo "---------------------------------------"
 
-# Run tests — pipe to tee using absolute path, capture exit code via PIPESTATUS
 set +e
-npx playwright test 2>&1 | tee "$LOG_FILE"
-TEST_EXIT=${PIPESTATUS[0]}
+npx playwright test > "$LOG_FILE" 2>&1
+TEST_EXIT=$?
 set -e
 
+cat "$LOG_FILE"
 echo "---------------------------------------"
 
 if [ "$TEST_EXIT" -eq 0 ]; then
@@ -35,12 +36,38 @@ if [ "$TEST_EXIT" -eq 0 ]; then
   exit 0
 fi
 
-echo "[2/4] Tests failed (exit code: $TEST_EXIT). Capturing logs..."
 LINE_COUNT=$(wc -l < "$LOG_FILE" | tr -d ' ')
-echo "      Log captured: $LINE_COUNT lines → $LOG_FILE"
+echo "[2/4] Tests failed ($LINE_COUNT lines). Uploading full log to GitHub Gist..."
 
-echo "[3/4] Encoding log and sending to GitHub Actions..."
-LOG_SNIPPET=$(tail -150 "$LOG_FILE" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+# Upload the entire log file to a secret Gist — no size limit
+LOG_CONTENT=$(python3 -c "import sys,json; print(json.dumps(open('$LOG_FILE').read()))")
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+GIST_RESPONSE=$(curl -s -X POST \
+  -H "Authorization: token ${GITHUB_TOKEN}" \
+  -H "Accept: application/vnd.github.v3+json" \
+  https://api.github.com/gists \
+  -d "{
+    \"description\": \"Pipeline triage log — ${TIMESTAMP}\",
+    \"public\": false,
+    \"files\": {
+      \"playwright-failure.log\": {
+        \"content\": $LOG_CONTENT
+      }
+    }
+  }")
+
+GIST_ID=$(echo "$GIST_RESPONSE" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('id',''))" 2>/dev/null)
+GIST_URL=$(echo "$GIST_RESPONSE" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('html_url',''))" 2>/dev/null)
+
+if [ -z "$GIST_ID" ]; then
+  echo "      ERROR: Gist upload failed. Response: $GIST_RESPONSE"
+  exit "$TEST_EXIT"
+fi
+
+echo "      Gist created: $GIST_URL"
+
+echo "[3/4] Sending Gist ID to GitHub Actions..."
 
 RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
   -H "Authorization: token ${GITHUB_TOKEN}" \
@@ -53,7 +80,7 @@ RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
       \"machine\": \"$(hostname)\",
       \"branch\": \"$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)\",
       \"commit\": \"$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)\",
-      \"log\": $LOG_SNIPPET
+      \"gist_id\": \"$GIST_ID\"
     }
   }")
 
@@ -63,12 +90,10 @@ BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS:")
 echo "[4/4] curl response: HTTP $HTTP_STATUS"
 
 if [ "$HTTP_STATUS" -eq 204 ]; then
-  echo "      Dispatch sent successfully."
-  echo "      Watch the triage run at: https://github.com/${GITHUB_REPO}/actions"
+  echo "      Dispatch sent. Full log: $GIST_URL"
+  echo "      Actions: https://github.com/${GITHUB_REPO}/actions"
 else
-  echo "      ERROR: Dispatch failed."
-  echo "      Body: $BODY"
-  echo "      Check: GITHUB_TOKEN has 'repo' scope and GITHUB_REPO=owner/repo is correct."
+  echo "      ERROR: Dispatch failed. Body: $BODY"
 fi
 
 exit "$TEST_EXIT"

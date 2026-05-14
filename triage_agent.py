@@ -1,26 +1,46 @@
 """
-Triage agent: reads the test failure payload from GitHub Actions env,
-calls a GitHub-hosted model (no external API key — uses GITHUB_TOKEN),
-then notifies Teams.
+Triage agent: fetches full log from GitHub Gist, calls a GitHub-hosted model
+(no external API key — uses GITHUB_TOKEN), then notifies Teams.
 """
 import os
 import json
+import urllib.request
 import requests
 from openai import OpenAI
 
-# GitHub Models endpoint — uses the auto-injected GITHUB_TOKEN in Actions
 client = OpenAI(
     base_url="https://models.inference.ai.azure.com",
     api_key=os.environ["GITHUB_TOKEN"],
 )
 
+def fetch_log_from_gist(gist_id: str, token: str) -> str:
+    req = urllib.request.Request(
+        f"https://api.github.com/gists/{gist_id}",
+        headers={
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+    )
+    with urllib.request.urlopen(req) as resp:
+        data = json.loads(resp.read())
+    return list(data["files"].values())[0]["content"]
+
 def main():
     payload  = json.loads(os.environ["EVENT_PAYLOAD"])
-    log      = payload.get("log", "(no log provided)")
+    token    = os.environ["GITHUB_TOKEN"]
+    gist_id  = payload.get("gist_id", "")
     job      = payload.get("job", "unknown-job")
     machine  = payload.get("machine", "unknown")
     branch   = payload.get("branch", "unknown")
     commit   = payload.get("commit", "unknown")
+
+    if not gist_id:
+        print("No gist_id in payload — cannot fetch log.")
+        return
+
+    print(f"Fetching full log from Gist {gist_id}...")
+    log = fetch_log_from_gist(gist_id, token)
+    print(f"Log fetched: {len(log.splitlines())} lines")
 
     prompt = f"""You are a senior QA/DevOps engineer. A Playwright E2E test suite just failed.
 
@@ -30,7 +50,7 @@ Context:
 - Branch : {branch}
 - Commit : {commit}
 
-Analyze the failure log and provide:
+Analyze the full failure log and provide:
 1. **Root Cause** – 2-3 sentences on what failed and why.
 2. **Affected Tests** – bullet list of failing test names.
 3. **Recommended Fix** – concrete steps a developer can follow.
@@ -38,14 +58,15 @@ Analyze the failure log and provide:
 
 Be concise. Use Markdown.
 
---- FAILURE LOG ---
+--- FULL FAILURE LOG ---
 {log}
 """
 
+    print("Calling GitHub Models for RCA...")
     response = client.chat.completions.create(
-        model="gpt-4o-mini",   # free-tier GitHub Model; swap to gpt-4o for deeper analysis
+        model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=1024,
+        max_tokens=1500,
     )
     rca = response.choices[0].message.content
 

@@ -221,3 +221,4 @@ __marimo__/
 node_modules/
 test-results/
 playwright-report/
+triage-logs/
