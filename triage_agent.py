@@ -10,6 +10,7 @@ Pipeline Triage Agent
 import os
 import sys
 import json
+import pathlib
 import urllib.request
 import requests
 from openai import OpenAI
@@ -96,8 +97,8 @@ def dispatch_tool(name: str, args: dict, token: str) -> str:
     return json.dumps(result)
 
 
-def run_agent_loop(client, messages: list, token: str) -> str:
-    while True:
+def run_agent_loop(client, messages: list, token: str, max_iterations: int = 10) -> str:
+    for _ in range(max_iterations):
         resp = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
@@ -116,6 +117,7 @@ def run_agent_loop(client, messages: list, token: str) -> str:
             messages.append(
                 {"role": "tool", "tool_call_id": tc.id, "content": result}
             )
+    return "Agent reached maximum iterations without producing a final response."
 
 
 # ── Prompt builder ────────────────────────────────────────────────────────────
@@ -134,9 +136,7 @@ CATEGORY_INSTRUCTIONS = {
     ),
 }
 
-_PROMPT_TEMPLATE = open(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts", "agent_prompt.md")
-).read()
+_PROMPT_TEMPLATE = pathlib.Path(__file__).parent.joinpath("prompts", "agent_prompt.md").read_text()
 
 
 def build_prompt(*, job: str, branch: str, commit: str, category: str,

@@ -16,7 +16,7 @@ def _pod(n: int = 0) -> str:
 
 
 def _ts(delta: int = 0) -> str:
-    t = datetime.datetime.utcnow() - datetime.timedelta(seconds=delta)
+    t = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=delta)
     return t.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
