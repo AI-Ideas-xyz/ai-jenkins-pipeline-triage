@@ -16,15 +16,18 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ── STEP 1: Print payload — verify logs are arriving ───────────────────
-      - name: Print received payload
+      # ── STEP 1: Fetch full log from Gist and print it ─────────────────────
+      - name: Print received payload and full log
         env:
+          GITHUB_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
           EVENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
         run: |
           python3 - <<'EOF'
-          import os, json
+          import os, json, urllib.request
 
-          p = json.loads(os.environ["EVENT_PAYLOAD"])
+          p       = json.loads(os.environ["EVENT_PAYLOAD"])
+          token   = os.environ["GITHUB_TOKEN"]
+          gist_id = p.get("gist_id", "")
 
           print("=" * 60)
           print("  Payload received from local machine")
@@ -33,12 +36,27 @@ jobs:
           print(f"  Machine : {p.get('machine', 'N/A')}")
           print(f"  Branch  : {p.get('branch', 'N/A')}")
           print(f"  Commit  : {p.get('commit', 'N/A')}")
+          print(f"  Gist ID : {gist_id}")
           print()
-          print("--- LOG SNIPPET (first 50 lines) ---")
-          log = p.get("log", "(empty)")
-          for line in log.splitlines()[:50]:
-              print(line)
-          print("=" * 60)
+
+          if not gist_id:
+              print("No gist_id in payload.")
+          else:
+              req = urllib.request.Request(
+                  f"https://api.github.com/gists/{gist_id}",
+                  headers={
+                      "Authorization": f"token {token}",
+                      "Accept": "application/vnd.github.v3+json"
+                  }
+              )
+              with urllib.request.urlopen(req) as resp:
+                  gist_data = json.loads(resp.read())
+
+              log = list(gist_data["files"].values())[0]["content"]
+              lines = log.splitlines()
+              print(f"--- FULL LOG ({len(lines)} lines) ---")
+              print(log)
+              print("=" * 60)
           EOF
 
       # ── STEP 2: Run triage agent (uncomment when ready) ───────────────────
