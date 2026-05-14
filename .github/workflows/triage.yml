@@ -15,36 +15,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── Step 1: Checkout ────────────────────────────────────────────────────
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ── Step 2: Try gh copilot extension (primary) ───────────────────────────
-      - name: Install gh copilot extension
-        id: install-copilot
-        continue-on-error: true
-        run: gh extension install github/gh-copilot --force
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run Copilot analysis
-        id: copilot-run
-        if: steps.install-copilot.outcome == 'success'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PAYLOAD: ${{ toJson(github.event.client_payload) }}
-          COPILOT_CLI_AUDIT_ENABLED: "0"
-        run: |
-          GIST_URL=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('gist_raw_url',''))")
-          CATEGORY=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('category','unknown'))")
-          JOB=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('job','unknown'))")
-          LOG=$(curl -s "$GIST_URL")
-          echo "--- Failure log fetched: $(echo "$LOG" | wc -l) lines ---"
-          QUERY="You are a DevOps engineer triaging a $CATEGORY pipeline failure for job '$JOB'. Analyze this log and provide: 1) Root Cause (2-3 sentences) 2) Affected components (bullet list) 3) Recommended fix (numbered steps) 4) Confidence (High/Medium/Low)."
-          echo "$LOG" | gh copilot explain "$QUERY" || echo "Copilot explain returned non-zero — fallback will run"
-
-      # ── Step 3: Python agent fallback ────────────────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -53,11 +26,7 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Python triage agent
-        if: >
-          steps.install-copilot.outcome == 'failure' ||
-          steps.copilot-run.outcome == 'failure' ||
-          steps.copilot-run.outcome == 'skipped'
+      - name: Run triage agent
         env:
           GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}

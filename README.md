@@ -12,14 +12,10 @@ Local Machine                              GitHub Actions (pipeline-failure even
 ./run_and_triage.sh          ─dispatch─►  triage.yml
   Playwright E2E tests                       │
   category: "playwright-e2e"                 ▼
-                                           Try: gh copilot extension (primary)
-./simulate_eks_failure.sh    ─dispatch─►    ├─ gh copilot explain <log>
-  Synthetic k8s log                         │  (continue-on-error)
-  category: "eks-deploy"                    │
-                                           Fallback: Python triage_agent.py
-                                             ├─ Fetches log from Gist raw URL
-                                             ├─ Calls GitHub Models (gpt-4o-mini)
-                                             ├─ Tool-calling loop:
+                                           Python triage_agent.py
+./simulate_eks_failure.sh    ─dispatch─►    ├─ Fetches log from Gist raw URL
+  Synthetic k8s log                         ├─ Calls GitHub Models (gpt-4o-mini)
+  category: "eks-deploy"                    ├─ Tool-calling loop:
                                              │    check_duplicate_issue
                                              │    create_github_issue / add_issue_comment
                                              ├─ Prints RCA to Actions log
