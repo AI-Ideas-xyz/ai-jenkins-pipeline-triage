@@ -2,11 +2,23 @@ name: Pipeline Triage Agent
 
 on:
   repository_dispatch:
-    types: [local-test-failure]
+    types: [pipeline-failure]
+  workflow_dispatch:
+    inputs:
+      gist_raw_url:
+        description: "Raw Gist URL of the failure log"
+        required: true
+      category:
+        description: "Failure category (playwright-e2e or eks-deploy)"
+        default: "eks-deploy"
+      job:
+        description: "Job name"
+        default: "manual-trigger"
 
 permissions:
   contents: read
   models: read
+  issues: write
 
 jobs:
   triage:
@@ -14,28 +26,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── Step 1: Checkout so triage_agent.py is available ──────────────────
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ── Step 2: Install Python deps ────────────────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
-        run: pip install openai requests
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
 
-      # ── Step 3: Run triage agent ───────────────────────────────────────────
-      # GITHUB_TOKEN  → GitHub Models (auto-injected, no setup needed)
-      # PAT_TOKEN     → Gist fetch + delete  (repo Settings → Secrets)
-      # TEAMS_WEBHOOK → Teams incoming webhook URL (repo Settings → Secrets)
-      # EVENT_PAYLOAD → metadata + gist_id sent from local machine
       - name: Run triage agent
         env:
-          GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}   # GitHub Models — auto-injected
-          TEAMS_WEBHOOK:   ${{ secrets.TEAMS_WEBHOOK }}  # Teams channel webhook
-          EVENT_PAYLOAD:   ${{ toJson(github.event.client_payload) }}
-          ACTIONS_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TEAMS_WEBHOOK:     ${{ secrets.TEAMS_WEBHOOK }}
+          ACTIONS_RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT_PAYLOAD: >-
+            ${{
+              github.event_name == 'workflow_dispatch'
+              && format('{{"gist_raw_url":"{0}","category":"{1}","job":"{2}","branch":"{3}","commit":"{4}"}}',
+                  github.event.inputs.gist_raw_url,
+                  github.event.inputs.category,
+                  github.event.inputs.job,
+                  github.ref_name,
+                  github.sha)
+              || toJson(github.event.client_payload)
+            }}
         run: python triage_agent.py
