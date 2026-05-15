@@ -142,13 +142,20 @@ def create_draft_pr(branch: str, commit_msg: str, files: list,
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     subprocess.run(["git", "config", "user.email", "triage-agent@github-actions"], check=True)
     subprocess.run(["git", "config", "user.name", "Pipeline Triage Agent"], check=True)
-    subprocess.run(["git", "checkout", "-b", branch], check=True)
+    subprocess.run(["git", "checkout", "-B", branch], check=True)
     subprocess.run(["git", "add"] + files, check=True)
     subprocess.run(["git", "commit", "-m", commit_msg], check=True)
     subprocess.run(
-        ["git", "push", f"https://x-access-token:{token}@github.com/{repo}.git", branch],
+        ["git", "push", "-f", f"https://x-access-token:{token}@github.com/{repo}.git", branch],
         check=True,
     )
+    # Return existing PR URL if one already exists for this branch
+    existing = subprocess.run(
+        ["gh", "pr", "view", branch, "--json", "url", "-q", ".url"],
+        capture_output=True, text=True, env={**os.environ, "GITHUB_TOKEN": token},
+    )
+    if existing.returncode == 0 and existing.stdout.strip():
+        return existing.stdout.strip()
     pr_body = (
         f"## Auto-fix: {error_class}\n\n"
         f"### Root Cause Analysis\n{rca}\n\n"
