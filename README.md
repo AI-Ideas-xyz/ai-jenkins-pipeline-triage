@@ -7,19 +7,22 @@ Simulates CI/CD pipeline failures (Playwright E2E tests and EKS deployments), up
 ## How it works
 
 ```
-Local Machine                              GitHub Actions (pipeline-failure event)
-─────────────                              ──────────────────────────────────────
-./run_and_triage.sh          ─dispatch─►  triage.yml
-  Playwright E2E tests                       │
-  category: "playwright-e2e"                 ▼
+GitHub Actions (simulate.yml)              GitHub Actions (triage.yml / pipeline-failure)
+─────────────────────────────              ──────────────────────────────────────────────
+simulate-eks job             ─dispatch─►  triage.yml
+  (workflow_dispatch / cron)                 │
+  category: "eks-deploy"                     ▼
                                            Python triage_agent.py
-./simulate_eks_failure.sh    ─dispatch─►    ├─ Fetches log from Gist raw URL
-  Synthetic k8s log                         ├─ Calls GitHub Models (gpt-4o)
-  category: "eks-deploy"                    ├─ Tool-calling loop:
+simulate-playwright job      ─dispatch─►    ├─ Fetches log from Gist raw URL
+  (workflow_dispatch)                        ├─ Calls GitHub Models (gpt-4o)
+  category: "playwright-e2e"                 ├─ Tool-calling loop:
                                              │    check_duplicate_issue
-                                             │    create_github_issue / add_issue_comment
+─ OR ─                                       │    create_github_issue / add_issue_comment
                                              ├─ Prints RCA to Actions log
-                                             └─ Sends Adaptive Card to Teams
+Local Machine                                └─ Sends Adaptive Card to Teams
+─────────────
+./run_and_triage.sh          ─dispatch─►  (same triage.yml above)
+./simulate_eks_failure.sh    ─dispatch─►
 ```
 
 ---
@@ -124,9 +127,44 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | Secret | Required | Description |
 |---|---|---|
 | `TEAMS_WEBHOOK` | Yes | Incoming webhook URL from your Teams channel (via Workflows) |
+| `PAT_TOKEN_1` | For simulate.yml | Fine-grained PAT for team member 1 (`repo` + Gist account permission). Used on days where `(day-1) % 3 == 0`. |
+| `PAT_TOKEN_2` | For simulate.yml | Fine-grained PAT for team member 2. Used on days where `(day-1) % 3 == 1`. |
+| `PAT_TOKEN_3` | For simulate.yml | Fine-grained PAT for team member 3. Used on days where `(day-1) % 3 == 2`. |
 
-> `GITHUB_TOKEN` is auto-injected by GitHub Actions — no setup needed.
-> `PAT_TOKEN` is no longer required — each developer's log is uploaded via their own local PAT and fetched via a public raw URL.
+> `GITHUB_TOKEN` is auto-injected by GitHub Actions — no setup needed for `triage.yml`.
+> `PAT_TOKEN_1/2/3` are required only for `simulate.yml`. The auto-injected token cannot create Gists, so a PAT with `gist` (account) permission is needed. The rotation spreads GitHub Models token usage across all three team members.
+> For local runs, each developer uses their own PAT in `.env` — no shared credentials.
+
+---
+
+## Step 6 — Trigger the demo from GitHub Actions (no local machine needed)
+
+This is the easiest way to demo — everything runs in the cloud.
+
+### One-time setup (repo admin)
+
+1. Each team member creates a fine-grained PAT (see Step 1 — use fine-grained, not classic):
+   - **Resource owner:** your GitHub account
+   - **Repository access:** Only `pramodhkumars7/ai-jenkins-pipeline-triage`
+   - **Permissions → Repository:** `Contents: Read`, `Issues: Read/Write`, `Metadata: Read`
+   - **Permissions → Account:** `Gists: Read/Write`
+2. Share the PAT with the repo admin (e.g. via Teams DM — don't commit it)
+3. Admin adds them as secrets: **Settings → Secrets and variables → Actions → New repository secret**
+   - `PAT_TOKEN_1` — team member 1's PAT
+   - `PAT_TOKEN_2` — team member 2's PAT
+   - `PAT_TOKEN_3` — team member 3's PAT
+
+### Running the demo
+
+1. Go to **Actions → Simulate Pipeline Failure → Run workflow**
+2. Choose:
+   - **Failure category:** `eks-deploy` or `playwright-e2e`
+   - **EKS scenario:** `random`, `CrashLoopBackOff`, `OOMKilled`, `ImagePullBackOff`, or `ReadinessProbeFailed` (ignored for Playwright)
+3. Click **Run workflow**
+4. The `simulate-eks` (or `simulate-playwright`) job generates a log, uploads it to a Gist, and dispatches the `pipeline-failure` event
+5. The **Pipeline Triage Agent** workflow fires automatically — watch it create a GitHub Issue and (if configured) post to Teams
+
+A daily smoke test also runs automatically at **08:00 UTC** (EKS/random scenario).
 
 ---
 
@@ -160,7 +198,8 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 │   └── agent_prompt.md      # Shared agent prompt template with category branching
 ├── .github/
 │   └── workflows/
-│       └── triage.yml       # GitHub Actions workflow
+│       ├── simulate.yml     # Trigger EKS/Playwright failures from Actions (no local machine)
+│       └── triage.yml       # AI triage agent workflow (fires on pipeline-failure event)
 ├── triage_agent.py          # AI triage agent with tool-calling (runs in Actions)
 ├── agent_tools.py           # GitHub Issue create / dedup / comment helpers
 ├── run_and_triage.sh        # Playwright failure dispatcher

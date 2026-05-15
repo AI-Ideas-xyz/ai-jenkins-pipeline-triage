@@ -1,0 +1,110 @@
+name: Simulate Pipeline Failure
+
+on:
+  workflow_dispatch:
+    inputs:
+      category:
+        description: "Failure category"
+        required: true
+        type: choice
+        options:
+          - eks-deploy
+          - playwright-e2e
+      scenario:
+        description: "EKS scenario (ignored for playwright-e2e)"
+        required: true
+        type: choice
+        default: random
+        options:
+          - random
+          - CrashLoopBackOff
+          - OOMKilled
+          - ImagePullBackOff
+          - ReadinessProbeFailed
+
+  schedule:
+    - cron: '0 8 * * *'   # daily smoke test at 08:00 UTC — always runs EKS/random
+
+permissions:
+  contents: read
+
+jobs:
+  # ── EKS path ─────────────────────────────────────────────────────────────────
+  simulate-eks:
+    name: Simulate EKS deploy failure
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.category == 'eks-deploy')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Select PAT (rotate across team members by day of month)
+        id: select-pat
+        env:
+          PAT_TOKEN_1: ${{ secrets.PAT_TOKEN_1 }}
+          PAT_TOKEN_2: ${{ secrets.PAT_TOKEN_2 }}
+          PAT_TOKEN_3: ${{ secrets.PAT_TOKEN_3 }}
+        run: |
+          PATS=("$PAT_TOKEN_1" "$PAT_TOKEN_2" "$PAT_TOKEN_3")
+          IDX=$(( ($(date +%-d) - 1) % 3 ))
+          echo "Rotating: using PAT index $((IDX + 1)) (day $(date +%-d))"
+          echo "selected_pat=${PATS[$IDX]}" >> $GITHUB_OUTPUT
+
+      - name: Generate log, upload Gist, dispatch pipeline-failure
+        env:
+          GITHUB_TOKEN: ${{ steps.select-pat.outputs.selected_pat }}
+          GITHUB_REPO:  ${{ github.repository }}
+        run: |
+          SCENARIO="${{ inputs.scenario }}"
+          if [ -z "$SCENARIO" ] || [ "$SCENARIO" = "random" ]; then
+            ./simulate_eks_failure.sh
+          else
+            ./simulate_eks_failure.sh "$SCENARIO"
+          fi
+
+  # ── Playwright path ───────────────────────────────────────────────────────────
+  simulate-playwright:
+    name: Simulate Playwright E2E failure
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.category == 'playwright-e2e'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies and Playwright
+        run: npm ci && npx playwright install chromium --with-deps
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Select PAT (rotate across team members by day of month)
+        id: select-pat
+        env:
+          PAT_TOKEN_1: ${{ secrets.PAT_TOKEN_1 }}
+          PAT_TOKEN_2: ${{ secrets.PAT_TOKEN_2 }}
+          PAT_TOKEN_3: ${{ secrets.PAT_TOKEN_3 }}
+        run: |
+          PATS=("$PAT_TOKEN_1" "$PAT_TOKEN_2" "$PAT_TOKEN_3")
+          IDX=$(( ($(date +%-d) - 1) % 3 ))
+          echo "Rotating: using PAT index $((IDX + 1)) (day $(date +%-d))"
+          echo "selected_pat=${PATS[$IDX]}" >> $GITHUB_OUTPUT
+
+      - name: Run Playwright tests, upload Gist, dispatch pipeline-failure
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ steps.select-pat.outputs.selected_pat }}
+          GITHUB_REPO:  ${{ github.repository }}
+        run: ./run_and_triage.sh
