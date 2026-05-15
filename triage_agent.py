@@ -52,7 +52,7 @@ def get_rca(log: str, category: str) -> str:
         f"Failure log:\n{log}"
     )
     result = subprocess.run(
-        ["gh", "copilot", "explain", prompt],
+        ["gh", "copilot", "explain", "--prompt", prompt],
         capture_output=True, text=True, timeout=120,
         env={**os.environ, "GH_PROMPT_DISABLED": "1"},
     )
