@@ -65,15 +65,5 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           TEAMS_WEBHOOK:     ${{ secrets.TEAMS_WEBHOOK }}
           ACTIONS_RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          EVENT_PAYLOAD: >-
-            ${{
-              github.event_name == 'workflow_dispatch'
-              && format('{{"log":"{0}","category":"{1}","job":"{2}","branch":"{3}","commit":"{4}"}}',
-                  github.event.inputs.log,
-                  github.event.inputs.category,
-                  github.event.inputs.job,
-                  github.ref_name,
-                  github.sha)
-              || toJson(github.event.client_payload)
-            }}
+          EVENT_PAYLOAD: ${{ github.event_name == 'workflow_dispatch' && toJson(github.event.inputs) || toJson(github.event.client_payload) }}
         run: python triage_agent.py
