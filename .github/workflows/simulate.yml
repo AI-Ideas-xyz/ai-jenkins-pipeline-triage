@@ -53,8 +53,13 @@ jobs:
         run: |
           PATS=("$PAT_TOKEN_1" "$PAT_TOKEN_2" "$PAT_TOKEN_3")
           IDX=$(( ($(date +%-d) - 1) % 3 ))
+          SELECTED="${PATS[$IDX]}"
+          if [ -z "$SELECTED" ]; then
+            echo "PAT_TOKEN_$((IDX + 1)) is empty — falling back to PAT_TOKEN_1"
+            SELECTED="$PAT_TOKEN_1"
+          fi
           echo "Rotating: using PAT index $((IDX + 1)) (day $(date +%-d))"
-          echo "selected_pat=${PATS[$IDX]}" >> $GITHUB_OUTPUT
+          echo "selected_pat=${SELECTED}" >> $GITHUB_OUTPUT
 
       - name: Generate log, upload Gist, dispatch pipeline-failure
         env:
@@ -99,8 +104,13 @@ jobs:
         run: |
           PATS=("$PAT_TOKEN_1" "$PAT_TOKEN_2" "$PAT_TOKEN_3")
           IDX=$(( ($(date +%-d) - 1) % 3 ))
+          SELECTED="${PATS[$IDX]}"
+          if [ -z "$SELECTED" ]; then
+            echo "PAT_TOKEN_$((IDX + 1)) is empty — falling back to PAT_TOKEN_1"
+            SELECTED="$PAT_TOKEN_1"
+          fi
           echo "Rotating: using PAT index $((IDX + 1)) (day $(date +%-d))"
-          echo "selected_pat=${PATS[$IDX]}" >> $GITHUB_OUTPUT
+          echo "selected_pat=${SELECTED}" >> $GITHUB_OUTPUT
 
       - name: Run Playwright tests, upload Gist, dispatch pipeline-failure
         continue-on-error: true
