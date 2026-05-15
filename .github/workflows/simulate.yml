@@ -63,7 +63,7 @@ jobs:
 
       - name: Generate log, upload Gist, dispatch pipeline-failure
         env:
-          GITHUB_TOKEN: ${{ steps.select-pat.outputs.selected_pat }}
+          GITHUB_TOKEN: ${{ secrets.DISPATCH_PAT }}
           GITHUB_REPO:  ${{ github.repository }}
         run: |
           SCENARIO="${{ inputs.scenario }}"
@@ -115,6 +115,6 @@ jobs:
       - name: Run Playwright tests, upload Gist, dispatch pipeline-failure
         continue-on-error: true
         env:
-          GITHUB_TOKEN: ${{ steps.select-pat.outputs.selected_pat }}
+          GITHUB_TOKEN: ${{ secrets.DISPATCH_PAT }}
           GITHUB_REPO:  ${{ github.repository }}
         run: ./run_and_triage.sh

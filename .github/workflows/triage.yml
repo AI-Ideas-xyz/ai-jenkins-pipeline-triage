@@ -56,12 +56,13 @@ jobs:
 
       - name: Install GitHub Copilot CLI extension (if not built-in)
         env:
-          GITHUB_TOKEN: ${{ steps.select-pat.outputs.selected_pat }}
+          GH_TOKEN: ${{ steps.select-pat.outputs.selected_pat }}
         run: gh copilot --version &>/dev/null || gh extension install github/gh-copilot
 
       - name: Run triage agent
         env:
-          GITHUB_TOKEN:      ${{ steps.select-pat.outputs.selected_pat }}
+          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_PAT:       ${{ steps.select-pat.outputs.selected_pat }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           TEAMS_WEBHOOK:     ${{ secrets.TEAMS_WEBHOOK }}
           ACTIONS_RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
