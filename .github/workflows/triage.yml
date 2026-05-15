@@ -54,10 +54,10 @@ jobs:
           echo "Rotating: using PAT index $((IDX + 1)) (day $(date +%-d))"
           echo "selected_pat=${SELECTED}" >> $GITHUB_OUTPUT
 
-      - name: Install GitHub Copilot CLI extension
+      - name: Install GitHub Copilot CLI extension (if not built-in)
         env:
           GITHUB_TOKEN: ${{ steps.select-pat.outputs.selected_pat }}
-        run: gh extension install github/gh-copilot
+        run: gh copilot --version &>/dev/null || gh extension install github/gh-copilot
 
       - name: Run triage agent
         env:
