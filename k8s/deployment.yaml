@@ -23,7 +23,9 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "500m"
-        env: []
+        env:
+        - name: DATABASE_URL
+          value: postgresql://db-service:5432/appdb
         readinessProbe:
           httpGet:
             path: /healthz
