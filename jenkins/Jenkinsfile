@@ -4,6 +4,17 @@ pipeline {
     agent any
 
     parameters {
+        gitParameter(
+            name: 'GIT_BRANCH',
+            type: 'PT_BRANCH',
+            defaultValue: 'origin/main',
+            description: 'Select branch to test',
+            branchFilter: 'origin/(.*)',
+            quickFilterEnabled: true,
+            selectedValue: 'DEFAULT',
+            sortMode: 'ASCENDING_SMART',
+            useRepository: 'file:///workspace'
+        )
         choice(
             name: 'TEST_CATEGORY',
             choices: ['playwright-e2e', 'eks-deploy'],
@@ -23,11 +34,33 @@ pipeline {
     }
 
     stages {
+        stage('Checkout Branch') {
+            steps {
+                script {
+                    echo "Checking out branch: ${params.GIT_BRANCH}"
+                    // Remove 'origin/' prefix if present
+                    def branchName = params.GIT_BRANCH.replaceAll('^origin/', '')
+                    echo "Branch name: ${branchName}"
+
+                    dir("${WORKSPACE_DIR}") {
+                        sh """
+                            git fetch origin
+                            git checkout ${branchName}
+                            git pull origin ${branchName}
+                            echo "Current branch:"
+                            git branch --show-current
+                        """
+                    }
+                }
+            }
+        }
+
         stage('Setup') {
             steps {
                 script {
                     echo "Starting pipeline for category: ${params.TEST_CATEGORY}"
-                    sh "cd ${WORKSPACE_DIR} && ls -la"
+                    echo "Testing branch: ${params.GIT_BRANCH}"
+                    sh "cd ${WORKSPACE_DIR} && git branch && ls -la"
                 }
             }
         }
