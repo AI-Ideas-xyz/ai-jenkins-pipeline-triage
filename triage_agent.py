@@ -158,13 +158,13 @@ def create_draft_pr(branch: str, commit_msg: str, files: list,
         subprocess.run(["git", "add"] + files, check=True)
         subprocess.run(["git", "commit", "-m", commit_msg], check=True)
         subprocess.run(["git", "push", remote_url, branch], check=True)
-    # Return existing PR URL if one exists, otherwise create it
+    # Return existing open PR URL if one exists, otherwise create it
     existing = subprocess.run(
-        ["gh", "pr", "view", branch, "--json", "url", "-q", ".url"],
+        ["gh", "pr", "view", branch, "--json", "url,state", "-q", "select(.state==\"OPEN\") | .url"],
         capture_output=True, text=True, env=gh_env,
     )
     if existing.returncode == 0 and existing.stdout.strip():
-        print(f"  Returning existing PR for branch {branch}")
+        print(f"  Returning existing open PR for branch {branch}")
         return existing.stdout.strip()
     pr_body = (
         f"## Auto-fix: {error_class}\n\n"
