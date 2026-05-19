@@ -223,3 +223,8 @@ test-results/
 playwright-report/
 triage-logs/
 .triage-last-gist
+
+# Jenkins
+jenkins/jenkins_home/
+jenkins/github-dispatch-payload.json
+jenkins/test-output.log
