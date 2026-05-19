@@ -1,3 +1,5 @@
+import groovy.json.JsonOutput
+
 pipeline {
     agent any
 
@@ -17,7 +19,7 @@ pipeline {
     environment {
         GITHUB_TOKEN = credentials('github-pat-token')
         WORKSPACE_DIR = '/workspace'
-        GITHUB_REPO = 'AI-Ideas-xyz/ai-jenkins-pipeline-triage'
+        GITHUB_REPO = 'pramodhkumars7/ai-jenkins-pipeline-triage'
     }
 
     stages {
@@ -52,15 +54,59 @@ pipeline {
                 script {
                     dir("${WORKSPACE_DIR}") {
                         def testResult = sh(
-                            script: 'npm test 2>&1 | tee test-output.log',
+                            script: 'npm test 2>&1 | tee test-output.log; exit ${PIPESTATUS[0]}',
                             returnStatus: true
                         )
 
-                        if (testResult != 0) {
-                            def failureLog = readFile('test-output.log').trim()
-                            echo "Tests failed. Triggering GitHub Actions triage..."
-                            triggerGitHubAction(failureLog, 'playwright-e2e', env.JOB_NAME)
-                            error("Playwright tests failed")
+                        echo "Test exit code: ${testResult}"
+
+                        def failureLog = readFile('test-output.log').trim()
+
+                        def hasFailed = testResult != 0 || failureLog.contains('failed')
+
+                        if (hasFailed) {
+                            echo "===== TESTS FAILED ====="
+                            echo "Triggering GitHub Actions triage workflow..."
+
+                            // Create JSON payload using JsonOutput for proper escaping
+                            def payloadMap = [
+                                event_type: 'pipeline-failure',
+                                client_payload: [
+                                    log: failureLog,
+                                    category: 'playwright-e2e',
+                                    job: "jenkins-local-${env.JOB_NAME}",
+                                    source: 'jenkins-local',
+                                    timestamp: new Date().format('yyyy-MM-dd HH:mm:ss')
+                                ]
+                            ]
+
+                            def payloadJson = JsonOutput.toJson(payloadMap)
+                            writeFile file: 'github-dispatch-payload.json', text: payloadJson
+
+                            def result = sh(
+                                script: """
+                                    curl -s -w "\\nHTTP_CODE:%{http_code}" -X POST \
+                                      -H "Accept: application/vnd.github.v3+json" \
+                                      -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                                      -H "Content-Type: application/json" \
+                                      https://api.github.com/repos/${GITHUB_REPO}/dispatches \
+                                      -d @github-dispatch-payload.json
+                                """,
+                                returnStdout: true
+                            ).trim()
+
+                            echo "GitHub API Response: ${result}"
+
+                            if (result.contains('HTTP_CODE:204') || result.contains('HTTP_CODE:200')) {
+                                echo "✓ Successfully triggered GitHub Actions triage workflow"
+                                echo "View at: https://github.com/${GITHUB_REPO}/actions"
+                            } else {
+                                echo "⚠ GitHub Actions trigger response: ${result}"
+                            }
+
+                            error("Playwright tests failed - GitHub Actions triage triggered")
+                        } else {
+                            echo "All tests passed!"
                         }
                     }
                 }
@@ -74,7 +120,6 @@ pipeline {
             steps {
                 script {
                     dir("${WORKSPACE_DIR}") {
-                        // Generate EKS failure log
                         def failureLog = sh(
                             script: """
                                 python3 scripts/gen_eks_log.py ${params.EKS_SCENARIO}
@@ -85,8 +130,38 @@ pipeline {
                         echo "Generated EKS failure log:"
                         echo failureLog
 
-                        // Trigger GitHub Actions
-                        triggerGitHubAction(failureLog, 'eks-deploy', env.JOB_NAME)
+                        // Create JSON payload using JsonOutput
+                        def payloadMap = [
+                            event_type: 'pipeline-failure',
+                            client_payload: [
+                                log: failureLog,
+                                category: 'eks-deploy',
+                                job: "jenkins-local-${env.JOB_NAME}",
+                                source: 'jenkins-local',
+                                timestamp: new Date().format('yyyy-MM-dd HH:mm:ss')
+                            ]
+                        ]
+
+                        def payloadJson = JsonOutput.toJson(payloadMap)
+                        writeFile file: 'github-dispatch-payload.json', text: payloadJson
+
+                        def result = sh(
+                            script: """
+                                curl -s -w "\\nHTTP_CODE:%{http_code}" -X POST \
+                                  -H "Accept: application/vnd.github.v3+json" \
+                                  -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                                  -H "Content-Type: application/json" \
+                                  https://api.github.com/repos/${GITHUB_REPO}/dispatches \
+                                  -d @github-dispatch-payload.json
+                            """,
+                            returnStdout: true
+                        ).trim()
+
+                        echo "GitHub API Response: ${result}"
+
+                        if (result.contains('HTTP_CODE:204') || result.contains('HTTP_CODE:200')) {
+                            echo "✓ Successfully triggered GitHub Actions triage workflow"
+                        }
 
                         error("EKS deployment failed (simulated)")
                     }
@@ -105,51 +180,5 @@ pipeline {
         success {
             echo 'Pipeline succeeded'
         }
-    }
-}
-
-def triggerGitHubAction(String logContent, String category, String jobName) {
-    // Escape log content for JSON
-    def escapedLog = logContent
-        .replaceAll('\\\\', '\\\\\\\\')
-        .replaceAll('"', '\\\\"')
-        .replaceAll('\\n', '\\\\n')
-        .replaceAll('\\r', '')
-
-    // Trigger via repository_dispatch
-    def payload = """
-    {
-        "event_type": "pipeline-failure",
-        "client_payload": {
-            "log": "${escapedLog}",
-            "category": "${category}",
-            "job": "jenkins-local-${jobName}",
-            "source": "jenkins-local",
-            "timestamp": "${new Date().format('yyyy-MM-dd HH:mm:ss')}"
-        }
-    }
-    """
-
-    // Write payload to file for debugging
-    writeFile file: 'github-dispatch-payload.json', text: payload
-
-    // Trigger GitHub Actions
-    def result = sh(
-        script: """
-            curl -X POST \
-              -H "Accept: application/vnd.github.v3+json" \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Content-Type: application/json" \
-              https://api.github.com/repos/${GITHUB_REPO}/dispatches \
-              -d @github-dispatch-payload.json
-        """,
-        returnStatus: true
-    )
-
-    if (result == 0) {
-        echo "✓ Successfully triggered GitHub Actions triage workflow"
-        echo "View at: https://github.com/${GITHUB_REPO}/actions"
-    } else {
-        echo "⚠ Failed to trigger GitHub Actions (status: ${result})"
     }
 }
