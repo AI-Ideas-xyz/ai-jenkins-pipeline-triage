@@ -267,7 +267,6 @@ def main():
             "type": "message",
             "attachments": [{
                 "contentType": "application/vnd.microsoft.card.adaptive",
-                "contentUrl": None,
                 "content": {
                     "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
                     "type": "AdaptiveCard",
@@ -277,39 +276,50 @@ def main():
                     },
                     "body": [
                         {
-                            "type": "TextBlock",
-                            "text": f"Pipeline Failure — {job}",
-                            "weight": "Bolder",
-                            "size": "Large",
-                            "color": "Attention",
-                            "wrap": True,
-                            "separator": False,
-                            "spacing": "None"
-                        },
-                        {
-                            "type": "FactSet",
-                            "separator": True,
-                            "spacing": "Medium",
-                            "facts": [
-                                {"title": "Job",      "value": job},
-                                {"title": "Branch",   "value": branch},
-                                {"title": "Category", "value": category},
-                                {"title": "Error",    "value": error_class},
+                            "type": "ColumnSet",
+                            "columns": [
+                                {
+                                    "type": "Column",
+                                    "width": "stretch",
+                                    "items": [
+                                        {
+                                            "type": "TextBlock",
+                                            "text": f"Pipeline Failure — {job}",
+                                            "weight": "Bolder",
+                                            "size": "Large",
+                                            "color": "Attention",
+                                            "wrap": True,
+                                            "separator": False,
+                                            "spacing": "None"
+                                        },
+                                        {
+                                            "type": "FactSet",
+                                            "separator": True,
+                                            "spacing": "Medium",
+                                            "facts": [
+                                                {"title": "Job",      "value": job},
+                                                {"title": "Branch",   "value": branch},
+                                                {"title": "Category", "value": category},
+                                                {"title": "Error",    "value": error_class},
+                                            ]
+                                        },
+                                        {
+                                            "type": "TextBlock",
+                                            "text": "RCA & Recommended Fix",
+                                            "weight": "Bolder",
+                                            "size": "Medium",
+                                            "separator": True,
+                                            "spacing": "Medium"
+                                        },
+                                        {
+                                            "type": "TextBlock",
+                                            "text": rca,
+                                            "wrap": True,
+                                            "spacing": "Small"
+                                        }
+                                    ]
+                                }
                             ]
-                        },
-                        {
-                            "type": "TextBlock",
-                            "text": "RCA & Recommended Fix",
-                            "weight": "Bolder",
-                            "size": "Medium",
-                            "separator": True,
-                            "spacing": "Medium"
-                        },
-                        {
-                            "type": "TextBlock",
-                            "text": rca,
-                            "wrap": True,
-                            "spacing": "Small"
                         }
                     ],
                     "actions": [
