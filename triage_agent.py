@@ -51,19 +51,23 @@ def get_rca(log: str, category: str) -> str:
         f"3. Confidence level (High/Medium/Low)\n\n"
         f"Failure log:\n{log}"
     )
-    result = subprocess.run(
-        ["gh", "copilot", "-p", prompt, "--silent", "--no-ask-user", "--model", "claude-sonnet-4.6"],
-        capture_output=True, text=True, timeout=120,
-        env={
-            **os.environ,
-            "GH_PROMPT_DISABLED": "1",
-            "GH_TOKEN": os.environ.get("COPILOT_PAT", ""),
-            "GITHUB_TOKEN": "",
-        },
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"gh copilot explain failed:\n{result.stderr}")
-    return result.stdout.strip()
+    try:
+        result = subprocess.run(
+            ["gh", "copilot", "-p", prompt, "--silent", "--no-ask-user", "--model", "claude-sonnet-4.6"],
+            capture_output=True, text=True, timeout=180,
+            env={
+                **os.environ,
+                "GH_PROMPT_DISABLED": "1",
+                "GH_TOKEN": os.environ.get("COPILOT_PAT", ""),
+                "GITHUB_TOKEN": "",
+            },
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"gh copilot explain failed:\n{result.stderr}")
+        return result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        print("  WARNING: gh copilot timed out, using fallback RCA")
+        return f"RCA analysis timed out. Manual investigation needed for {category} failure."
 
 
 def detect_error_class(log: str, rca: str) -> str:
