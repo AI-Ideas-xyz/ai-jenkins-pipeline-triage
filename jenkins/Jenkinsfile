@@ -1,0 +1,235 @@
+import groovy.json.JsonOutput
+import java.util.regex.Pattern
+
+pipeline {
+    agent any
+
+    parameters {
+        gitParameter(
+            name: 'GIT_BRANCH',
+            type: 'PT_BRANCH',
+            defaultValue: 'origin/main',
+            description: 'Select branch to test',
+            branchFilter: 'origin/(.*)',
+            quickFilterEnabled: true,
+            selectedValue: 'DEFAULT',
+            sortMode: 'ASCENDING_SMART',
+            listSize: '10'
+            // useRepository will auto-detect from SCM configuration
+        )
+        choice(
+            name: 'TEST_CATEGORY',
+            choices: ['playwright-e2e', 'eks-deploy'],
+            description: 'Category of tests to run'
+        )
+        choice(
+            name: 'EKS_SCENARIO',
+            choices: ['random', 'CrashLoopBackOff', 'OOMKilled', 'ImagePullBackOff', 'ReadinessProbeFailed'],
+            description: 'EKS failure scenario (only used if category is eks-deploy)'
+        )
+    }
+
+    environment {
+        GITHUB_TOKEN = credentials('github-pat-token')
+        WORKSPACE_DIR = '/workspace'
+        GITHUB_REPO = 'pramodhkumars7/ai-jenkins-pipeline-triage'
+    }
+
+    stages {
+        stage('Checkout Branch') {
+            steps {
+                script {
+                    def branchName = params.GIT_BRANCH.replaceAll('^origin/', '')
+                    echo "📋 Checking out branch..."
+
+                    dir("${WORKSPACE_DIR}") {
+                        sh """
+                            set +x
+                            git fetch origin -q 2>&1 | grep -v "http" | head -1 || true
+                            git checkout ${branchName} -q 2>&1 | head -1 || true
+                            git pull origin ${branchName} -q 2>&1 | head -1 || true
+                            echo "✓ Branch checked out successfully"
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Setup') {
+            steps {
+                script {
+                    echo "🚀 Running ${params.TEST_CATEGORY} tests..."
+                }
+            }
+        }
+
+        stage('Install Dependencies') {
+            when {
+                expression { params.TEST_CATEGORY == 'playwright-e2e' }
+            }
+            steps {
+                script {
+                    echo "📦 Installing dependencies..."
+                    dir("${WORKSPACE_DIR}") {
+                        sh '''
+                            set +x
+                            npm install --silent 2>&1 | grep -v "^npm WARN" || true
+                            npx playwright install chromium --quiet 2>&1 | tail -1 || true
+                        '''
+                    }
+                    echo "✓ Dependencies installed"
+                }
+            }
+        }
+
+        stage('Run Playwright Tests') {
+            when {
+                expression { params.TEST_CATEGORY == 'playwright-e2e' }
+            }
+            steps {
+                script {
+                    echo "🧪 Running Playwright tests..."
+                    dir("${WORKSPACE_DIR}") {
+                        def testResult = sh(
+                            script: 'npm test 2>&1 | tee test-output.log; exit ${PIPESTATUS[0]}',
+                            returnStatus: true
+                        )
+
+                        def failureLog = readFile('test-output.log').trim()
+                        def hasFailed = testResult != 0 || failureLog.contains('failed')
+
+                        if (hasFailed) {
+                            echo "❌ Tests failed - Triggering triage workflow..."
+
+                            // Sanitize logs to remove sensitive information
+                            def sanitizedLog = failureLog
+                                .replaceAll(/(?i)(password|passwd|pwd|secret|token|api[_-]?key)[\s:=]+["']?[\w\-\.\/]+["']?/, '$1=***')
+                                .replaceAll(/[\w\.-]+@[\w\.-]+\.\w+/, '***@***.***')
+                                .replaceAll(/https?:\/\/[^:]+:[^@]+@/, 'https://***:***@')
+                                .replaceAll(/AKIA[0-9A-Z]{16}/, 'AKIA***')
+                                .replaceAll(/-----BEGIN [\w\s]+ PRIVATE KEY-----[\s\S]*?-----END [\w\s]+ PRIVATE KEY-----/, '***PRIVATE_KEY***')
+                                .replaceAll(/(?i)bearer\s+[\w\-\.]+/, 'Bearer ***')
+                                .replaceAll(/${WORKSPACE_DIR}/, '/workspace')
+
+                            // Create JSON payload using JsonOutput for proper escaping
+                            def payloadMap = [
+                                event_type: 'pipeline-failure',
+                                client_payload: [
+                                    log: sanitizedLog,
+                                    category: 'playwright-e2e',
+                                    job: "ci-pipeline",
+                                    source: 'jenkins',
+                                    timestamp: new Date().format('yyyy-MM-dd HH:mm:ss')
+                                ]
+                            ]
+
+                            def payloadJson = JsonOutput.toJson(payloadMap)
+                            writeFile file: 'github-dispatch-payload.json', text: payloadJson
+
+                            def result = sh(
+                                script: """
+                                    set +x
+                                    curl -s -w "\\nHTTP_CODE:%{http_code}" -X POST \
+                                      -H "Accept: application/vnd.github.v3+json" \
+                                      -H "Authorization: Bearer \${GITHUB_TOKEN}" \
+                                      -H "Content-Type: application/json" \
+                                      https://api.github.com/repos/\${GITHUB_REPO}/dispatches \
+                                      -d @github-dispatch-payload.json 2>&1 | tail -1
+                                """,
+                                returnStdout: true
+                            ).trim()
+
+                            if (result.contains('HTTP_CODE:204') || result.contains('HTTP_CODE:200')) {
+                                echo "✓ Triage workflow triggered successfully"
+                            } else {
+                                def statusCode = result.contains('HTTP_CODE:') ? result.split('HTTP_CODE:')[1] : 'unknown'
+                                echo "⚠ Trigger failed (HTTP: ${statusCode})"
+                            }
+
+                            error("Tests failed - triage workflow initiated")
+                        } else {
+                            echo "✅ All tests passed!"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Simulate EKS Failure') {
+            when {
+                expression { params.TEST_CATEGORY == 'eks-deploy' }
+            }
+            steps {
+                script {
+                    echo "☸️  Simulating EKS deployment failure..."
+                    dir("${WORKSPACE_DIR}") {
+                        def failureLog = sh(
+                            script: "python3 scripts/gen_eks_log.py ${params.EKS_SCENARIO}",
+                            returnStdout: true
+                        ).trim()
+
+                        echo "❌ EKS failure simulated - triggering triage workflow..."
+
+                        // Sanitize logs to remove sensitive information
+                        def sanitizedLog = failureLog
+                            .replaceAll(/(?i)(password|passwd|pwd|secret|token|api[_-]?key)[\s:=]+["']?[\w\-\.\/]+["']?/, '$1=***')
+                            .replaceAll(/[\w\.-]+@[\w\.-]+\.\w+/, '***@***.***')
+                            .replaceAll(/https?:\/\/[^:]+:[^@]+@/, 'https://***:***@')
+                            .replaceAll(/AKIA[0-9A-Z]{16}/, 'AKIA***')
+                            .replaceAll(/-----BEGIN [\w\s]+ PRIVATE KEY-----[\s\S]*?-----END [\w\s]+ PRIVATE KEY-----/, '***PRIVATE_KEY***')
+                            .replaceAll(/(?i)bearer\s+[\w\-\.]+/, 'Bearer ***')
+                            .replaceAll(/${WORKSPACE_DIR}/, '/workspace')
+
+                        def payloadMap = [
+                            event_type: 'pipeline-failure',
+                            client_payload: [
+                                log: sanitizedLog,
+                                category: 'eks-deploy',
+                                job: "ci-pipeline",
+                                source: 'jenkins',
+                                timestamp: new Date().format('yyyy-MM-dd HH:mm:ss')
+                            ]
+                        ]
+
+                        def payloadJson = JsonOutput.toJson(payloadMap)
+                        writeFile file: 'github-dispatch-payload.json', text: payloadJson
+
+                        def result = sh(
+                            script: """
+                                set +x
+                                curl -s -w "\\nHTTP_CODE:%{http_code}" -X POST \
+                                  -H "Accept: application/vnd.github.v3+json" \
+                                  -H "Authorization: Bearer \${GITHUB_TOKEN}" \
+                                  -H "Content-Type: application/json" \
+                                  https://api.github.com/repos/\${GITHUB_REPO}/dispatches \
+                                  -d @github-dispatch-payload.json 2>&1 | tail -1
+                            """,
+                            returnStdout: true
+                        ).trim()
+
+                        if (result.contains('HTTP_CODE:204') || result.contains('HTTP_CODE:200')) {
+                            echo "✓ Triage workflow triggered successfully"
+                        } else {
+                            def statusCode = result.contains('HTTP_CODE:') ? result.split('HTTP_CODE:')[1] : 'unknown'
+                            echo "⚠ Trigger failed (HTTP: ${statusCode})"
+                        }
+
+                        error("EKS deployment failed")
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+        }
+        failure {
+            echo '❌ Pipeline failed - Triage workflow triggered'
+        }
+        success {
+            echo '✅ Pipeline completed successfully'
+        }
+    }
+}
