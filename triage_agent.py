@@ -267,10 +267,10 @@ def main():
             "type": "message",
             "attachments": [{
                 "contentType": "application/vnd.microsoft.card.adaptive",
+                "contentUrl": None,
                 "content": {
-                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
                     "type": "AdaptiveCard",
-                    "version": "1.5",
+                    "version": "1.4",
                     "msteams": {
                         "width": "Full"
                     },
