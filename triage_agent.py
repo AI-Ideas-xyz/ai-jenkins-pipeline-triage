@@ -271,37 +271,60 @@ def main():
                 "content": {
                     "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
                     "type": "AdaptiveCard",
-                    "version": "1.4",
+                    "version": "1.5",
                     "msteams": {
                         "width": "Full"
                     },
                     "body": [
                         {
-                            "type": "TextBlock",
-                            "text": f"Pipeline Failure — {job}",
-                            "weight": "Bolder",
-                            "size": "Medium",
-                            "color": "Attention",
+                            "type": "Container",
+                            "style": "emphasis",
+                            "bleed": True,
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": f"Pipeline Failure — {job}",
+                                    "weight": "Bolder",
+                                    "size": "Large",
+                                    "color": "Attention",
+                                    "wrap": True,
+                                }
+                            ]
                         },
                         {
-                            "type": "FactSet",
-                            "facts": [
-                                {"title": "Job",      "value": job},
-                                {"title": "Branch",   "value": branch},
-                                {"title": "Category", "value": category},
-                                {"title": "Error",    "value": error_class},
-                            ],
-                        },
-                        {
-                            "type": "TextBlock",
-                            "text": "RCA & Recommended Fix",
-                            "weight": "Bolder",
+                            "type": "Container",
                             "separator": True,
+                            "spacing": "Medium",
+                            "items": [
+                                {
+                                    "type": "FactSet",
+                                    "facts": [
+                                        {"title": "Job",      "value": job},
+                                        {"title": "Branch",   "value": branch},
+                                        {"title": "Category", "value": category},
+                                        {"title": "Error",    "value": error_class},
+                                    ],
+                                }
+                            ]
                         },
                         {
-                            "type": "TextBlock",
-                            "text": rca,
-                            "wrap": True,
+                            "type": "Container",
+                            "separator": True,
+                            "spacing": "Medium",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": "RCA & Recommended Fix",
+                                    "weight": "Bolder",
+                                    "size": "Medium",
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": rca,
+                                    "wrap": True,
+                                    "spacing": "Small",
+                                }
+                            ]
                         },
                     ],
                     "actions": [
