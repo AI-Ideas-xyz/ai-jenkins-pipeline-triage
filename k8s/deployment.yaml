@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: myapp
-        image: myapp:v2.3.1
+        image: myapp:v2.3.2
         resources:
           requests:
             memory: "128Mi"
